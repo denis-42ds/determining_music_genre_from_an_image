@@ -1,0 +1,4 @@
+.env_genre
+.git
+.ipynb_checkpoints
+run_jupyter.sh
