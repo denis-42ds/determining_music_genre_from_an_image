@@ -3,8 +3,8 @@
 ## Статус проекта: в работе
 
 ## Описание рабочих файлов:
-- [requirements.txt](https://github.com/denis-42ds/cover_songs_search/blob/ym/requirements.txt) - библиотеки Python, необходимые для работы проекта, а также их версии
-- [music_genres.ipynb](https://github.com/denis-42ds/cover_songs_search/blob/ym/music_covers.ipynb) - рабочая тетрадь с исследованиями, визуализациями и текстовыми описаниями
+- [requirements.txt](https://github.com/denis-42ds/determining_music_genre_from_an_image/blob/development/requirements.txt) - библиотеки Python, необходимые для работы проекта, а также их версии
+- [music_genres.ipynb](https://github.com/denis-42ds/determining_music_genre_from_an_image/blob/development/music_genres.ipynb) - рабочая тетрадь с исследованиями, визуализациями и текстовыми описаниями
 
 ## Описание проекта
 Необходимо разработать модель, которая определит жанр музыкального альбома по изображению его обложки
