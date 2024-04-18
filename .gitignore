@@ -1,5 +1,9 @@
 data
+__pycache__
 .env_genre
 .git
 .ipynb_checkpoints
 run_jupyter.sh
+run_mlflow_server.sh
+.env
+*.npy

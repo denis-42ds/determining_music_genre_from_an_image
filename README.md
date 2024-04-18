@@ -3,8 +3,18 @@
 ## Статус проекта: в работе
 
 ## Описание рабочих файлов:
-- [requirements.txt](https://github.com/denis-42ds/determining_music_genre_from_an_image/blob/development/requirements.txt) - библиотеки Python, необходимые для работы проекта, а также их версии
 - [music_genres.ipynb](https://github.com/denis-42ds/determining_music_genre_from_an_image/blob/development/music_genres.ipynb) - рабочая тетрадь с исследованиями, визуализациями и текстовыми описаниями
+- [requirements.txt](https://github.com/denis-42ds/determining_music_genre_from_an_image/blob/development/requirements.txt) - список зависимостей, необходимых для работы проекта, а также их версии
+- [research_class.py](https://github.com/denis-42ds/determining_music_genre_from_an_image/blob/development/research_class.py) - файл, содержащий класс для проведения исследования
+- [assets](https://github.com/denis-42ds/determining_music_genre_from_an_image/tree/development/assets) - директория с сохранёнными артефактами
+
+## Установка зависимостей и запуск проекта
+```Bash
+git clone https://github.com/denis-42ds/determining_music_genre_from_an_image.git
+cd determining_music_genre_from_an_image
+pip install -r requirements.txt
+jupyter lab
+```
 
 ## Описание проекта
 Необходимо разработать модель, которая определит жанр музыкального альбома по изображению его обложки
@@ -35,8 +45,8 @@
 - Исследование/решение дополнительных задач.
 - Подготовка отчета по исследованию.
 
-## Используемые инструменты
-- python, sklearn, faiss, pytorch, torchvision, fastai
+## Основные используемые инструменты
+- python: pandas, numpy, seaborn, matplotlib, torch, torchvision, faiss
 
-## Вывод:
+## Заключение:
 - 
