@@ -132,7 +132,7 @@ class DatasetExplorer:
 
         return features_array
 
-    def model_fitting(self, model_name=None, features=None, labels=None):
+    def model_fitting(self, model_name=None, features=None, labels=None, params=None):
         X_tmp, X_test, y_tmp, y_test = train_test_split(features, labels, test_size=0.2, random_state=RANDOM_STATE, stratify=labels)
         X_train, X_valid, y_train, y_valid = train_test_split(X_tmp, y_tmp, test_size=0.25, random_state=RANDOM_STATE, stratify=y_tmp)
 
@@ -160,7 +160,7 @@ class DatasetExplorer:
             y_pred_encoded = y_train_encoded[I.flatten() % len(y_train_encoded)]
             
         elif model_name == 'SVM':
-            model = SVC(kernel='linear', C=1.0)
+            model = SVC(**params)
             model.fit(X_train, y_train_encoded)
             y_pred_encoded = model.predict(X_valid)
 
