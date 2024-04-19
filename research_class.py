@@ -12,6 +12,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 
 from PIL import Image
+from sklearn.svm import SVC
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score, log_loss
@@ -52,17 +53,17 @@ class DatasetExplorer:
 
         plt.figure(figsize=(14, 6))
         df_agg = dataset.groupby('genre_name').agg({'image_name': 'count'}).reset_index()
-
+        df_agg.rename(columns={'image_name': 'count_image_names'}, inplace=True)
         sns.barplot(data=df_agg,
                     x='genre_name',
-                    y='image_name',
+                    y='count_image_names',
                     hue='genre_name',
                     palette=sns.color_palette("husl", len(df_agg)))
 
         plt.title(f"images total distribution")
 
         # сохранение графика в файл
-        plt.savefig(os.path.join(self.ASSETS_DIR, 'images total distribution.png'))
+        # plt.savefig(os.path.join(self.ASSETS_DIR, 'images total distribution.png'))
         plt.show()
 
         fig, axs = plt.subplots(3, 5, figsize=(14, 10))
@@ -75,7 +76,7 @@ class DatasetExplorer:
             ax.imshow(image)
             ax.axis('off')
             ax.set_title(row['genre_name'], fontsize=12)
-        plt.savefig(os.path.join(self.ASSETS_DIR, 'Examples of cover images.png'))
+        # plt.savefig(os.path.join(self.ASSETS_DIR, 'Examples of cover images.png'))
         plt.show()
 
         # Функция для получения размера изображения
@@ -85,6 +86,10 @@ class DatasetExplorer:
 
         # Добавление колонки 'image_size' и заполнение размерами изображений
         dataset['image_size'] = dataset.apply(lambda row: get_image_size(os.path.join(self.DATA_PATH, row['genre_name'], row['image_name'])), axis=1)
+
+        print(f"Количество полных повторов строк: {dataset.duplicated().sum()}")
+
+        print(f"Количество повторов названий изображений: {dataset['image_name'].duplicated().sum()}")
 
         print(f"Размеры изображений: {dataset['image_size'].unique()}")
 
@@ -128,21 +133,21 @@ class DatasetExplorer:
         return features_array
 
     def model_fitting(self, model_name=None, features=None, labels=None):
+        X_tmp, X_test, y_tmp, y_test = train_test_split(features, labels, test_size=0.2, random_state=RANDOM_STATE, stratify=labels)
+        X_train, X_valid, y_train, y_valid = train_test_split(X_tmp, y_tmp, test_size=0.25, random_state=RANDOM_STATE, stratify=y_tmp)
+
+        label_encoder = LabelEncoder()
+        y_train_encoded = label_encoder.fit_transform(y_train)
+        y_valid_encoded = label_encoder.transform(y_valid)
+        y_test_encoded = label_encoder.transform(y_test)
+
+        print("Размерности выборок:")
+        print(f"обучающая {X_train.shape}")
+        print(f"валидационная {X_valid.shape}")
+        print(f"тестовая {X_test.shape}")
+
         if model_name == 'Baseline':
-            X_tmp, X_test, y_tmp, y_test = train_test_split(features, labels, test_size=0.2, random_state=RANDOM_STATE, stratify=labels)
-
-            X_train, X_valid, y_train, y_valid = train_test_split(X_tmp, y_tmp, test_size=0.25, random_state=RANDOM_STATE, stratify=y_tmp)
-
-            label_encoder = LabelEncoder()
-            y_train_encoded = label_encoder.fit_transform(y_train)
-            y_valid_encoded = label_encoder.transform(y_valid)
-            y_test_encoded = label_encoder.transform(y_test)
-
-            print("Размерности выборок:")
-            print(f"обучающая {X_train.shape}")
-            print(f"валидационная {X_valid.shape}")
-            print(f"тестовая {X_test.shape}")
-
+            model=None
             dimension = features.shape[1]
             index_faiss = faiss.IndexFlatL2(dimension)
 
@@ -153,31 +158,36 @@ class DatasetExplorer:
 
             # Получение предсказанных меток классов
             y_pred_encoded = y_train_encoded[I.flatten() % len(y_train_encoded)]
-            y_pred = label_encoder.inverse_transform(y_pred_encoded)
+            
+        elif model_name == 'SVM':
+            model = SVC(kernel='linear', C=1.0)
+            model.fit(X_train, y_train_encoded)
+            y_pred_encoded = model.predict(X_valid)
 
-            # расчёт метрик качества
-            metrics = {}
+        y_pred = label_encoder.inverse_transform(y_pred_encoded)
+        # расчёт метрик качества
+        metrics = {}
 
-            conf_matrix = confusion_matrix(y_valid, y_pred, normalize='all')
-            precision =  precision_score(y_valid, y_pred, average='weighted')
-            recall = recall_score(y_valid, y_pred, average='weighted')
-            f1 = f1_score(y_valid, y_pred, average='weighted')
-            accuracy = accuracy_score(y_valid, y_pred)
-            err1 = conf_matrix[0, 1]
-            err2 = conf_matrix[1, 0]
+        conf_matrix = confusion_matrix(y_valid, y_pred, normalize='all')
+        precision =  precision_score(y_valid, y_pred, average='weighted')
+        recall = recall_score(y_valid, y_pred, average='weighted')
+        f1 = f1_score(y_valid, y_pred, average='weighted')
+        accuracy = accuracy_score(y_valid, y_pred)
+        err1 = conf_matrix[0, 1]
+        err2 = conf_matrix[1, 0]
 
-            # сохранение метрик в словарь
-            metrics["precision"] = precision
-            metrics["accuracy"] = accuracy            
-            metrics["recall"] = recall
-            metrics["f1"] = f1
-            metrics["err1"] = err1
-            metrics["err2"] = err2
+        # сохранение метрик в словарь
+        metrics["precision"] = precision
+        metrics["accuracy"] = accuracy            
+        metrics["recall"] = recall
+        metrics["f1"] = f1
+        metrics["err1"] = err1
+        metrics["err2"] = err2
 
-            valid_report = classification_report(y_valid, y_pred)
-            print(f'Classification Report:\n{valid_report}')
+        valid_report = classification_report(y_valid, y_pred)
+        print(f'Classification Report:\n{valid_report}')
 
-        return metrics, X_train, y_train
+        return metrics, X_train, y_train, X_test, y_test, model
 
     def model_logging(self,
 					  experiment_name=None,
@@ -205,7 +215,7 @@ class DatasetExplorer:
         else:
             pip_requirements = "requirements.txt"
             signature = mlflow.models.infer_signature(train_data, train_label.values)
-            input_example = (train_data).iloc[0].to_dict()
+            input_example = (pd.DataFrame(train_data)).iloc[0].to_dict()
 
             with mlflow.start_run(run_name=run_name, experiment_id=experiment_id) as run:
                 run_id = run.info.run_id

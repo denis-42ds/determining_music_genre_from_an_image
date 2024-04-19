@@ -1,4 +1,5 @@
 data
+mlflow_experiments_store
 __pycache__
 .env_genre
 .git
