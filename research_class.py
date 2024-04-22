@@ -7,6 +7,9 @@ import mlflow
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import torchvision.models as models
 import torchvision.transforms as transforms
@@ -15,6 +18,7 @@ from PIL import Image
 from sklearn.svm import SVC
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score, log_loss
 
 # установка констант
@@ -164,6 +168,55 @@ class DatasetExplorer:
             model.fit(X_train, y_train_encoded)
             y_pred_encoded = model.predict(X_valid)
 
+        elif model_name == 'NeuralNetwork':
+            class NeuralNetwork(nn.Module):
+                def __init__(self, input_size, hidden_layers, output_size, activation):
+                    super(NeuralNetwork, self).__init__()
+                    self.hidden_layers = nn.ModuleList()
+                    self.hidden_layers.append(nn.Linear(input_size, hidden_layers[0]))
+                    for i in range(1, len(hidden_layers)):
+                        self.hidden_layers.append(nn.Linear(hidden_layers[i-1], hidden_layers[i]))
+                    self.output = nn.Linear(hidden_layers[-1], output_size)
+                    self.activation = getattr(F, activation)
+
+                def forward(self, x):
+                    for layer in self.hidden_layers:
+                        x = self.activation(layer(x))
+                    x = F.softmax(self.output(x), dim=1)
+                    return x
+
+            model = NeuralNetwork(input_size=features.shape[1], hidden_layers=params['hidden_layers'], output_size=len(np.unique(labels)), activation=params['activation'])
+
+            # Определение функции потерь и оптимизатора
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.Adam(model.parameters(), lr=params['learning_rate'])
+
+            # Преобразование данных в формат PyTorch DataLoader
+            train_dataset = TensorDataset(torch.Tensor(X_train), torch.LongTensor(y_train_encoded))
+            train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True)
+
+            # Обучение модели
+            for epoch in range(params['epochs']):
+                for inputs, labels in train_loader:
+                    optimizer.zero_grad()
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+                    loss.backward()
+                    optimizer.step()
+
+            # Оценка модели на валидационных данных
+            with torch.no_grad():
+                outputs = model(torch.Tensor(X_valid))
+                _, predicted = torch.max(outputs, 1)
+                accuracy = (predicted == torch.LongTensor(y_valid_encoded)).sum().item() / len(y_valid_encoded)
+                print(f'Validation Accuracy: {accuracy}')
+
+                # Предсказание на валидационных данных
+                outputs_test = model(torch.Tensor(X_valid))
+                _, predicted_test = torch.max(outputs_test, 1)
+                y_pred_encoded = predicted_test.numpy()
+
+		
         y_pred = label_encoder.inverse_transform(y_pred_encoded)
         # расчёт метрик качества
         metrics = {}
