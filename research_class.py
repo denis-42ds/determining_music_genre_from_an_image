@@ -17,8 +17,8 @@ import torchvision.transforms as transforms
 from PIL import Image
 from sklearn.svm import SVC
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score, log_loss
 
 # установка констант
@@ -185,42 +185,72 @@ class DatasetExplorer:
                     x = F.softmax(self.output(x), dim=1)
                     return x
 
-            model = NeuralNetwork(input_size=features.shape[1], hidden_layers=params['hidden_layers'], output_size=len(np.unique(labels)), activation=params['activation'])
+            class NeuralNetworkEstimator(nn.Module):
+                def __init__(self, input_size, hidden_layers, output_size, activation='relu', learning_rate=0.001, epochs=10):
+                    super(NeuralNetworkEstimator, self).__init__()
+                    self.model = NeuralNetwork(input_size, hidden_layers, output_size, activation)
+                    self.input_size = input_size
+                    self.hidden_layers = hidden_layers
+                    self.output_size = output_size
+                    self.activation = activation
+                    self.learning_rate = learning_rate
+                    self.epochs = epochs
 
-            # Определение функции потерь и оптимизатора
-            criterion = nn.CrossEntropyLoss()
-            optimizer = optim.Adam(model.parameters(), lr=params['learning_rate'])
+                def fit(self, X, y):
+                    criterion = nn.CrossEntropyLoss()
+                    optimizer = optim.Adam(self.model.parameters(), lr=0.001)
 
-            # Преобразование данных в формат PyTorch DataLoader
-            train_dataset = TensorDataset(torch.Tensor(X_train), torch.LongTensor(y_train_encoded))
-            train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True)
+                    train_dataset = TensorDataset(torch.Tensor(X), torch.LongTensor(y))
+                    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 
-            # Обучение модели
-            for epoch in range(params['epochs']):
-                for inputs, labels in train_loader:
-                    optimizer.zero_grad()
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
+                    for epoch in range(10):
+                        for inputs, labels in train_loader:
+                            optimizer.zero_grad()
+                            outputs = self.model(inputs)
+                            loss = criterion(outputs, labels)
+                            loss.backward()
+                            optimizer.step()
 
-            # Оценка модели на валидационных данных
-            with torch.no_grad():
-                outputs = model(torch.Tensor(X_valid))
-                _, predicted = torch.max(outputs, 1)
-                accuracy = (predicted == torch.LongTensor(y_valid_encoded)).sum().item() / len(y_valid_encoded)
-                print(f'Validation Accuracy: {accuracy}')
+                def predict(self, X):
+                    with torch.no_grad():
+                        outputs = self.model(torch.Tensor(X))
+                        _, predicted = torch.max(outputs, 1)
+                        return predicted.numpy()
 
-                # Предсказание на валидационных данных
-                outputs_test = model(torch.Tensor(X_valid))
-                _, predicted_test = torch.max(outputs_test, 1)
-                y_pred_encoded = predicted_test.numpy()
+                def get_params(self, deep=True):
+                    return {'input_size': self.input_size,
+							'hidden_layers': self.hidden_layers,
+							'output_size': self.output_size,
+							'activation': self.activation,
+							'learning_rate': self.learning_rate,
+							'epochs': self.epochs}
 
+                def set_params(self, **parameters):
+                    for parameter, value in parameters.items():
+                        setattr(self, parameter, value)
+                    return self
+
+
+            estimator = NeuralNetworkEstimator(input_size=X_train.shape[1], output_size=len(np.unique(labels)), hidden_layers=[64, 32], activation='relu')
+
+            # Создание экземпляра GridSearchCV
+            grid_search = GridSearchCV(estimator=estimator, param_grid=params, cv=3, scoring='accuracy', refit='accuracy')
+
+            # Обучение модели с подбором параметров
+            grid_search.fit(X_train, y_train_encoded)
+
+            best_params = grid_search.best_params_
+            model = NeuralNetworkEstimator(input_size=X_train.shape[1],
+										   hidden_layers=best_params['hidden_layers'],
+										   output_size=len(np.unique(labels)),
+										   activation=best_params['activation'])
+            model.fit(X_train, y_train_encoded)
+
+            y_pred_encoded = model.predict(X_valid)
 		
         y_pred = label_encoder.inverse_transform(y_pred_encoded)
         # расчёт метрик качества
         metrics = {}
-
         conf_matrix = confusion_matrix(y_valid, y_pred, normalize='all')
         precision =  precision_score(y_valid, y_pred, average='weighted')
         recall = recall_score(y_valid, y_pred, average='weighted')
