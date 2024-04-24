@@ -4,6 +4,7 @@ import torch
 import faiss
 import random
 import mlflow
+import fastai
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -11,15 +12,17 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-import torchvision.models as models
+import torchvision.models as tv_models
 import torchvision.transforms as transforms
 
 from PIL import Image
 from sklearn.svm import SVC
+from fastai.vision.all import *
+# from fastai.metrics import accuracy
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score, log_loss
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score
 
 # установка констант
 RANDOM_STATE = 42
@@ -104,7 +107,7 @@ class DatasetExplorer:
         try:
             features_array = np.load(os.path.join(self.ASSETS_DIR, 'features.npy'))
         except FileNotFoundError:
-            model_resnet = models.resnet18(weights=models.resnet.ResNet18_Weights.IMAGENET1K_V1)
+            model_resnet = tv_models.resnet18(weights=tv_models.ResNet18_Weights.IMAGENET1K_V1)
             model_resnet.eval()
             transform = transforms.Compose([
                 transforms.Resize((224, 224)),
@@ -137,18 +140,19 @@ class DatasetExplorer:
         return features_array
 
     def model_fitting(self, model_name=None, features=None, labels=None, params=None):
-        X_tmp, X_test, y_tmp, y_test = train_test_split(features, labels, test_size=0.2, random_state=RANDOM_STATE, stratify=labels)
-        X_train, X_valid, y_train, y_valid = train_test_split(X_tmp, y_tmp, test_size=0.25, random_state=RANDOM_STATE, stratify=y_tmp)
+        if features:
+            X_tmp, X_test, y_tmp, y_test = train_test_split(features, labels, test_size=0.2, random_state=RANDOM_STATE, stratify=labels)
+            X_train, X_valid, y_train, y_valid = train_test_split(X_tmp, y_tmp, test_size=0.25, random_state=RANDOM_STATE, stratify=y_tmp)
 
-        label_encoder = LabelEncoder()
-        y_train_encoded = label_encoder.fit_transform(y_train)
-        y_valid_encoded = label_encoder.transform(y_valid)
-        y_test_encoded = label_encoder.transform(y_test)
+            label_encoder = LabelEncoder()
+            y_train_encoded = label_encoder.fit_transform(y_train)
+            y_valid_encoded = label_encoder.transform(y_valid)
+            y_test_encoded = label_encoder.transform(y_test)
 
-        print("Размерности выборок:")
-        print(f"обучающая {X_train.shape}")
-        print(f"валидационная {X_valid.shape}")
-        print(f"тестовая {X_test.shape}")
+            print("Размерности выборок:")
+            print(f"обучающая {X_train.shape}")
+            print(f"валидационная {X_valid.shape}")
+            print(f"тестовая {X_test.shape}")
 
         if model_name == 'Baseline':
             model=None
@@ -162,11 +166,13 @@ class DatasetExplorer:
 
             # Получение предсказанных меток классов
             y_pred_encoded = y_train_encoded[I.flatten() % len(y_train_encoded)]
+            y_pred = label_encoder.inverse_transform(y_pred_encoded)
             
         elif model_name == 'SVM':
             model = SVC(**params)
             model.fit(X_train, y_train_encoded)
             y_pred_encoded = model.predict(X_valid)
+            y_pred = label_encoder.inverse_transform(y_pred_encoded)
 
         elif model_name == 'NeuralNetwork':
             class NeuralNetwork(nn.Module):
@@ -247,8 +253,34 @@ class DatasetExplorer:
             model.fit(X_train, y_train_encoded)
 
             y_pred_encoded = model.predict(X_valid)
-		
-        y_pred = label_encoder.inverse_transform(y_pred_encoded)
+            y_pred = label_encoder.inverse_transform(y_pred_encoded)
+
+        elif model_name == 'fastai':
+            idl = ImageDataLoaders.from_folder(path=self.DATA_PATH, train='train', valid='valid',
+                                   valid_pct=0.2, seed=RANDOM_STATE, vocab=None,
+                                   item_tfms=None, batch_tfms=None,
+                                   img_cls=PILImage, bs=32,
+                                   val_bs=32, shuffle=False,
+                                   device=None)
+
+            print("Первые три элемента загрузчика:")
+            display(idl.valid_ds.items[:3])
+			
+            model = vision_learner(dls=idl,
+                                   arch=models.resnet18,
+                                   pretrained=True,
+                                   weights=models.ResNet18_Weights.IMAGENET1K_V1,
+                                   opt_func=Adam,
+                                   lr=0.001,
+                                   loss_func=nn.CrossEntropyLoss(),
+                                   metrics=fastai.metrics.accuracy)
+
+            model.fit_one_cycle(1)
+            
+            preds, targs = model.get_preds()
+            y_pred = torch.argmax(preds, dim=1).numpy()
+            y_valid = targs.numpy()
+
         # расчёт метрик качества
         metrics = {}
         conf_matrix = confusion_matrix(y_valid, y_pred, normalize='all')
@@ -270,7 +302,10 @@ class DatasetExplorer:
         valid_report = classification_report(y_valid, y_pred)
         print(f'Classification Report:\n{valid_report}')
 
-        return metrics, X_train, y_train, X_test, y_test, model
+        try:
+            return metrics, X_train, y_train, X_test, y_test, model
+        except:
+            return metrics, model
 
     def model_logging(self,
 					  experiment_name=None,
