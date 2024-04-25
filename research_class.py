@@ -16,9 +16,9 @@ import torchvision.models as tv_models
 import torchvision.transforms as transforms
 
 from PIL import Image
+from pathlib import Path
 from sklearn.svm import SVC
 from fastai.vision.all import *
-# from fastai.metrics import accuracy
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split, GridSearchCV
@@ -140,7 +140,7 @@ class DatasetExplorer:
         return features_array
 
     def model_fitting(self, model_name=None, features=None, labels=None, params=None):
-        if features:
+        if features is not None:
             X_tmp, X_test, y_tmp, y_test = train_test_split(features, labels, test_size=0.2, random_state=RANDOM_STATE, stratify=labels)
             X_train, X_valid, y_train, y_valid = train_test_split(X_tmp, y_tmp, test_size=0.25, random_state=RANDOM_STATE, stratify=y_tmp)
 
@@ -256,30 +256,73 @@ class DatasetExplorer:
             y_pred = label_encoder.inverse_transform(y_pred_encoded)
 
         elif model_name == 'fastai':
-            idl = ImageDataLoaders.from_folder(path=self.DATA_PATH, train='train', valid='valid',
-                                   valid_pct=0.2, seed=RANDOM_STATE, vocab=None,
-                                   item_tfms=None, batch_tfms=None,
-                                   img_cls=PILImage, bs=32,
-                                   val_bs=32, shuffle=False,
-                                   device=None)
+            if params['dl_type'] == 'from_folder':
+                idl = ImageDataLoaders.from_folder(path=self.DATA_PATH, train='train', valid='valid',
+                                                   valid_pct=0.2, seed=RANDOM_STATE, vocab=None,
+                                                   item_tfms=None, batch_tfms=None,
+                                                   img_cls=PILImage, bs=params['batch'],
+                                                   val_bs=params['batch'], shuffle=False,
+                                                   device=None)
+            elif params['dl_type'] == 'from_df':
+                idl = ImageDataLoaders.from_df(params['df'], path=params['path'], valid_pct=0.2, seed=RANDOM_STATE,
+                                               fn_col=0, folder=None, suff='', label_col=1,
+                                               label_delim=None, y_block=None, valid_col=None,
+                                               item_tfms=None, batch_tfms=None, img_cls=PILImage,
+											   bs=params['batch'], val_bs=params['batch'], shuffle=True,
+											   device=None)
 
             print("Первые три элемента загрузчика:")
             display(idl.valid_ds.items[:3])
 			
-            model = vision_learner(dls=idl,
-                                   arch=models.resnet18,
-                                   pretrained=True,
-                                   weights=models.ResNet18_Weights.IMAGENET1K_V1,
-                                   opt_func=Adam,
-                                   lr=0.001,
-                                   loss_func=nn.CrossEntropyLoss(),
-                                   metrics=fastai.metrics.accuracy)
+            if params['arch'] == 'resnet18':
+                model = vision_learner(dls=idl,
+                                       arch=models.resnet18,
+                                       pretrained=True,
+                                       weights=models.ResNet18_Weights.IMAGENET1K_V1,
+                                       opt_func=Adam,
+                                       lr=params['lr'],
+                                       loss_func=nn.CrossEntropyLoss(),
+                                       metrics=fastai.metrics.accuracy)
 
-            model.fit_one_cycle(1)
+            elif params['arch'] == 'resnet50':
+                model = vision_learner(dls=idl,
+                                       arch=models.resnet50,
+                                       pretrained=True,
+                                       weights=models.ResNet50_Weights.IMAGENET1K_V1,
+                                       opt_func=Adam,
+                                       lr=params['lr'],
+                                       loss_func=nn.CrossEntropyLoss(),
+                                       metrics=fastai.metrics.accuracy)
+
+            if params['fit_type'] == 'fit_one_cycle':
+                model.fit_one_cycle(params['epochs'])
+
+            elif params['fit_type'] == 'fine_tune':
+                model.fine_tune(params['epochs'])
             
             preds, targs = model.get_preds()
             y_pred = torch.argmax(preds, dim=1).numpy()
             y_valid = targs.numpy()
+
+            y_train = []
+            X_train = []
+
+            for path in idl.train_ds.items:
+                path_parts = Path(path).parts
+                label = path_parts[1]  # Наименование жанра - вторая часть пути
+                feature = path_parts[2]  # Наименование изображения - третья часть пути
+                y_train.append(label)
+                X_train.append(feature)
+
+            y_test = []
+            X_test = []
+
+            for path in idl.valid_ds.items:
+                path_parts = Path(path).parts
+                label = path_parts[1]
+                feature = path_parts[2]
+                y_test.append(label)
+                X_test.append(feature)
 
         # расчёт метрик качества
         metrics = {}
@@ -303,9 +346,9 @@ class DatasetExplorer:
         print(f'Classification Report:\n{valid_report}')
 
         try:
-            return metrics, X_train, y_train, X_test, y_test, model
+            return metrics, X_train, y_train, X_test, y_test, idl, model
         except:
-            return metrics, model
+            return metrics, X_train, y_train, X_test, y_test, model
 
     def model_logging(self,
 					  experiment_name=None,
@@ -315,7 +358,8 @@ class DatasetExplorer:
 					  metrics=None,
 					  model=None,
 					  train_data=None,
-					  train_label=None,
+					  test_data=None,
+					  test_label=None,
 					  metadata=None,
 					  code_paths=None,
 					  tsh=None,
@@ -332,7 +376,10 @@ class DatasetExplorer:
                 mlflow.log_metrics(metrics)
         else:
             pip_requirements = "requirements.txt"
-            signature = mlflow.models.infer_signature(train_data, train_label.values)
+            try:
+                signature = mlflow.models.infer_signature(test_data, test_label.values)
+            except:
+                signature = mlflow.models.infer_signature(test_data, test_label)
             input_example = (pd.DataFrame(train_data)).iloc[0].to_dict()
 
             with mlflow.start_run(run_name=run_name, experiment_id=experiment_id) as run:
