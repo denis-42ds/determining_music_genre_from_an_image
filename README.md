@@ -48,7 +48,7 @@ jupyter lab
 - Подготовка отчета по исследованию.
 
 ## Основные используемые инструменты
-- python: pandas, numpy, seaborn, matplotlib, torch, torchvision, faiss, sklearn
+- python: pandas, numpy, seaborn, matplotlib, torch, torchvision, faiss, sklearn, fastai
 - postgresql
 - mlflow
 

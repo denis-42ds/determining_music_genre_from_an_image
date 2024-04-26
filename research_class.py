@@ -281,7 +281,7 @@ class DatasetExplorer:
                                        weights=models.ResNet18_Weights.IMAGENET1K_V1,
                                        opt_func=Adam,
                                        lr=params['lr'],
-                                       loss_func=nn.CrossEntropyLoss(),
+                                       # loss_func=nn.CrossEntropyLoss(),
                                        metrics=fastai.metrics.accuracy)
 
             elif params['arch'] == 'resnet50':
@@ -398,3 +398,15 @@ class DatasetExplorer:
                     registered_model_name=registry_model,
                     await_registration_for=60
 				)
+
+    def model_analysis(self, model):
+        print('Recorder plot sched')
+        model.recorder.plot_sched()
+
+        interp_clas = ClassificationInterpretation.from_learner(model)
+        interp_clas.plot_confusion_matrix(normalize=True, title='Confusion matrix', cmap='Blues', norm_dec=2, plot_txt=True)
+
+        interp = Interpretation.from_learner(model)
+        interp.plot_top_losses(k=12, largest=True)
+
+        model.show_results()

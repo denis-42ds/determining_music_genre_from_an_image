@@ -10,5 +10,4 @@ run_mlflow_server.sh
 .env
 *.npy
 *.pdf
-*.json
-*.pkl*
+
