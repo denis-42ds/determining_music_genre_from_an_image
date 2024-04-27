@@ -21,6 +21,7 @@ from sklearn.svm import SVC
 from fastai.vision.all import *
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader, TensorDataset
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score
 
@@ -141,18 +142,18 @@ class DatasetExplorer:
 
     def model_fitting(self, model_name=None, features=None, labels=None, params=None):
         if features is not None:
-            X_tmp, X_test, y_tmp, y_test = train_test_split(features, labels, test_size=0.2, random_state=RANDOM_STATE, stratify=labels)
-            X_train, X_valid, y_train, y_valid = train_test_split(X_tmp, y_tmp, test_size=0.25, random_state=RANDOM_STATE, stratify=y_tmp)
+            X_train, X_valid, y_train, y_valid = train_test_split(features, labels, test_size=0.2, random_state=RANDOM_STATE, stratify=labels)
+            # X_train, X_valid, y_train, y_valid = train_test_split(X_tmp, y_tmp, test_size=0.25, random_state=RANDOM_STATE, stratify=y_tmp)
 
             label_encoder = LabelEncoder()
             y_train_encoded = label_encoder.fit_transform(y_train)
             y_valid_encoded = label_encoder.transform(y_valid)
-            y_test_encoded = label_encoder.transform(y_test)
+            # y_test_encoded = label_encoder.transform(y_test)
 
             print("Размерности выборок:")
             print(f"обучающая {X_train.shape}")
             print(f"валидационная {X_valid.shape}")
-            print(f"тестовая {X_test.shape}")
+            # print(f"тестовая {X_test.shape}")
 
         if model_name == 'Baseline':
             model=None
@@ -348,7 +349,7 @@ class DatasetExplorer:
         try:
             return metrics, X_train, y_train, X_test, y_test, idl, model
         except:
-            return metrics, X_train, y_train, X_test, y_test, model
+            return metrics, X_train, y_train, X_valid, y_valid, model
 
     def model_logging(self,
 					  experiment_name=None,
@@ -370,7 +371,7 @@ class DatasetExplorer:
         experiment = mlflow.get_experiment_by_name(experiment_name)
         experiment_id = mlflow.set_experiment(experiment_name).experiment_id
 		
-        if run_name == 'baseline_0_registry':
+        if run_name == 'baseline_1_all_data':
             with mlflow.start_run(run_name=run_name, experiment_id=experiment_id) as run:
                 run_id = run.info.run_id
                 mlflow.log_metrics(metrics)
@@ -410,3 +411,55 @@ class DatasetExplorer:
         interp.plot_top_losses(k=12, largest=True)
 
         model.show_results()
+
+    def genre_rec_sys(self, dataset=None, image_name=None, emb_array=None, num_recommendations=3):
+        '''
+        - на вход получает датафрейм, название изображения, эмбеддинги и необходимое количество рекомендованных наименований,
+        - получает его эмбеддинги, производит поиск близких значений,
+        - возвращает заданное количество изображений с подписанным жанром и значением расстояния до разделяющей гиперплоскости.
+        '''
+        # Получение индекса изображения
+        el_num = dataset[dataset['image_name'] == image_name].index[0]
+
+        print('Поиск ближайших соседей к данной обложке:')
+        fig, ax = plt.subplots(figsize=(4, 4))
+        image_path =  os.path.join(self.DATA_PATH, dataset.iloc[el_num, 1], dataset.iloc[el_num, 0])
+        image = Image.open(image_path)
+
+        ax.imshow(image)
+        ax.axis('off')
+        ax.set_title(dataset.iloc[el_num, 1], fontsize=12)
+
+        plt.show()
+    
+        # Получение эмбеддингов
+        el_emb = emb_array[el_num]
+
+        # Вычисление косинусного сходства между выбранным изображением и всеми другими
+        similarities = cosine_similarity([el_emb], emb_array)
+
+        # Сортировка индексов изображений по убыванию косинусного сходства
+        indices = similarities.argsort()[0][::-1]
+		
+        # Возвращение рекомендаций
+        recommendations = []
+        for i in range(1, num_recommendations + 1):
+            index = indices[i]
+            image_path = os.path.join(self.DATA_PATH, dataset.iloc[index, 1], dataset.iloc[index, 0])
+            genre = dataset.iloc[index, 1]
+            similarity = similarities[0][index]			
+            recommendations.append((image_path, genre, similarity))
+
+        def print_recommendations(recommendations):
+            print('Рекомендации:')
+            fig, axes = plt.subplots(1, len(recommendations), figsize=(12, 4))
+
+            for i, (image_path, genre, distance) in enumerate(recommendations):
+                image = Image.open(image_path)
+                axes[i].imshow(image)
+                axes[i].axis('off')
+                axes[i].set_title(f'{genre}\Cosine similarity: {distance:.2f}', fontsize=12)
+
+            plt.show()
+
+        print_recommendations(recommendations)
